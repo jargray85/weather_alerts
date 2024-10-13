@@ -3,18 +3,20 @@ use serde::Deserialize;
 use reqwest::Client;
 use eframe::{egui, App, Frame};
 use dotenv::dotenv;
+use serde_json;
 
 struct WeatherApp {
     weather_data: Option<String>,
     daily_weather_description: Option<String>,
+    location: Option<String>
 }
 
 impl App for WeatherApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut Frame) {
         let _ = frame;
         egui::CentralPanel::default().show(ctx, |ui| {
-            let heading_text = if let Some(ref desc) = self.daily_weather_description {
-                format!("Today's Weather - {}", desc)
+            let heading_text = if let (Some(ref location), Some(ref desc)) = (&self.location, &self.daily_weather_description) {
+                format!("Today's weather for {} - {}", location, desc)
             } else {
                 "Today's Weather".to_string()
             };
@@ -35,12 +37,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
 
     // Fetch weather data
-    let (weather_data, daily_weather_description) = fetch_weather_data().await?;
+    let (weather_data, daily_weather_description, city) = fetch_weather_data().await?;
 
     // Create the app instance
     let app = WeatherApp {
         weather_data: Some(weather_data),
         daily_weather_description: Some(daily_weather_description),
+        location: Some(city),
     };
 
     // Run the GUI application
@@ -54,11 +57,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn fetch_weather_data() -> Result<(String, String), Box<dyn std::error::Error>> {
-    // Load environment variables
+async fn fetch_weather_data() -> Result<(String, String, String), Box<dyn std::error::Error>> {
+    // Load environment variables (no longer needed for city and country)
     let api_key = env::var("OPENWEATHERMAP_API_KEY")?;
-    let city = env::var("CITY").unwrap_or_else(|_| "Valparaiso".to_string());
-    let country_code = env::var("COUNTRY_CODE").unwrap_or_else(|_| "US".to_string());
+
+    // Get user's location
+    let (city, country_code) = get_user_location().await?;
 
     let client = Client::new();
 
@@ -71,7 +75,27 @@ async fn fetch_weather_data() -> Result<(String, String), Box<dyn std::error::Er
     // Format weather data and get daily_weather_description
     let (weather_string, daily_weather_description) = format_weather_data(&weather_data);
 
-    Ok((weather_string, daily_weather_description))
+    Ok((weather_string, daily_weather_description, city))
+}
+
+async fn get_user_location() -> Result<(String, String), Box<dyn std::error::Error>> {
+    let client = reqwest::Client::new();
+
+    // Set a reasonable timeout
+    let res = client.get("http://ip-api.com/json/")
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await?;
+
+    if res.status().is_success() {
+        let json: serde_json::Value = res.json().await?;
+        let city = json["city"].as_str().unwrap_or("Unknown City").to_string();
+        let country_code = json["countryCode"].as_str().unwrap_or("US").to_string();
+
+        Ok((city, country_code))
+    } else {
+        Err("Failed to get user location".into())
+    }
 }
 
 #[derive(Debug, Deserialize)]
