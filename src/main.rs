@@ -6,12 +6,18 @@ use dotenv::dotenv;
 
 struct WeatherApp {
     weather_data: Option<String>,
+    daily_weather_description: Option<String>,
 }
 
 impl App for WeatherApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Today's Weather");
+            let heading_text = if let Some(ref desc) = self.daily_weather_description {
+                format!("Today's Weather - {}", desc)
+            } else {
+                "Today's Weather".to_string()
+            };
+            ui.heading(heading_text);
             if let Some(ref data) = self.weather_data {
                 ui.separator();
                 ui.label(data);
@@ -28,11 +34,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
 
     // Fetch weather data
-    let weather_data = fetch_weather_data().await?;
+    let (weather_data, daily_weather_description) = fetch_weather_data().await?;
 
     // Create the app instance
     let app = WeatherApp {
         weather_data: Some(weather_data),
+        daily_weather_description: Some(daily_weather_description),
     };
 
     // Run the GUI application
@@ -46,7 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn fetch_weather_data() -> Result<String, Box<dyn std::error::Error>> {
+async fn fetch_weather_data() -> Result<(String, String), Box<dyn std::error::Error>> {
     // Load environment variables
     let api_key = env::var("OPENWEATHERMAP_API_KEY")?;
     let city = env::var("CITY").unwrap_or_else(|_| "Valparaiso".to_string());
@@ -60,13 +67,11 @@ async fn fetch_weather_data() -> Result<String, Box<dyn std::error::Error>> {
     // Get weather data
     let weather_data = get_weather_data(&client, lat, lon, &api_key).await?;
 
-    // Format weather data
-    let weather_string = format_weather_data(&weather_data);
+    // Format weather data and get daily_weather_description
+    let (weather_string, daily_weather_description) = format_weather_data(&weather_data);
 
-    Ok(weather_string)
+    Ok((weather_string, daily_weather_description))
 }
-
-// Include your existing structs and functions for get_coordinates, get_weather_data, etc.
 
 #[derive(Debug, Deserialize)]
 struct GeoResponse {
@@ -95,9 +100,19 @@ struct Current {
 
 #[derive(Debug, Deserialize)]
 struct Daily {
+    #[serde(default)]
     pop: f64,
+    #[serde(default)]
     summary: String,
+    temp: DailyTemp,
     weather: Vec<Weather>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DailyTemp {
+    day: f64,
+    min: f64,
+    max: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -148,7 +163,7 @@ async fn get_weather_data(
     Ok(weather_data)
 }
 
-fn format_weather_data(weather_data: &WeatherResponse) -> String {
+fn format_weather_data(weather_data: &WeatherResponse) -> (String, String) {
     let current = &weather_data.current;
     let today = &weather_data.daily[0];
     let tomorrow = weather_data.daily.get(1);
@@ -164,7 +179,7 @@ fn format_weather_data(weather_data: &WeatherResponse) -> String {
 
     // Ensure pop is within 0.0 to 1.0
     let chance_of_rain_today = (today.pop.min(1.0) * 100.0).round();
-    let daily_weather_description = &today.weather[0].description;
+    let daily_weather_description = today.weather[0].description.clone();
 
     let today_summary = &today.summary;
 
@@ -174,14 +189,13 @@ fn format_weather_data(weather_data: &WeatherResponse) -> String {
         0.0
     };
 
-    format!(
+    let formatted_data = format!(
         "Weather: {}\n\
         Temperature: {:.1}°F (Feels like {:.1}°F)\n\
         Humidity: {}%\n\
         Wind: {:.1} mph {}\n\
         Chance of Rain Today: {:.0}%\n\
         Chance of Rain Tomorrow: {:.0}%\n\
-        Today's Overview: {}
         Summary: {}",
         weather_description,
         temp,
@@ -191,9 +205,10 @@ fn format_weather_data(weather_data: &WeatherResponse) -> String {
         wind_direction,
         chance_of_rain_today,
         chance_of_rain_tomorrow,
-        daily_weather_description,
         today_summary
-    )
+    );
+
+    (formatted_data, daily_weather_description)
 }
 
 fn degrees_to_cardinal(degrees: u16) -> &'static str {
