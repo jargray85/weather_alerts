@@ -96,6 +96,7 @@ struct Current {
 #[derive(Debug, Deserialize)]
 struct Daily {
     pop: f64,
+    summary: String,
     weather: Vec<Weather>,
 }
 
@@ -138,7 +139,12 @@ async fn get_weather_data(
     );
 
     let res = client.get(&weather_url).send().await?;
-    let weather_data: WeatherResponse = res.json().await?;
+    let text = res.text().await?;
+
+    // Print the raw JSON response for inspection
+    println!("API Response: {}", text);
+
+    let weather_data: WeatherResponse = serde_json::from_str(&text)?;
     Ok(weather_data)
 }
 
@@ -160,6 +166,8 @@ fn format_weather_data(weather_data: &WeatherResponse) -> String {
     let chance_of_rain_today = (today.pop.min(1.0) * 100.0).round();
     let daily_weather_description = &today.weather[0].description;
 
+    let today_summary = &today.summary;
+
     let chance_of_rain_tomorrow = if let Some(tomorrow) = tomorrow {
         (tomorrow.pop.min(1.0) * 100.0).round()
     } else {
@@ -173,7 +181,8 @@ fn format_weather_data(weather_data: &WeatherResponse) -> String {
         Wind: {:.1} mph {}\n\
         Chance of Rain Today: {:.0}%\n\
         Chance of Rain Tomorrow: {:.0}%\n\
-        Today's Overview: {}",
+        Today's Overview: {}
+        Summary: {}",
         weather_description,
         temp,
         feels_like,
@@ -182,7 +191,8 @@ fn format_weather_data(weather_data: &WeatherResponse) -> String {
         wind_direction,
         chance_of_rain_today,
         chance_of_rain_tomorrow,
-        daily_weather_description
+        daily_weather_description,
+        today_summary
     )
 }
 
