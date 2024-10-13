@@ -156,9 +156,6 @@ async fn get_weather_data(
     let res = client.get(&weather_url).send().await?;
     let text = res.text().await?;
 
-    // Print the raw JSON response for inspection
-    println!("API Response: {}", text);
-
     let weather_data: WeatherResponse = serde_json::from_str(&text)?;
     Ok(weather_data)
 }
