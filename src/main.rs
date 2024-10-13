@@ -11,6 +11,7 @@ struct WeatherApp {
 
 impl App for WeatherApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut Frame) {
+        let _ = frame;
         egui::CentralPanel::default().show(ctx, |ui| {
             let heading_text = if let Some(ref desc) = self.daily_weather_description {
                 format!("Today's Weather - {}", desc)
@@ -44,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Run the GUI application
     let native_options = eframe::NativeOptions::default();
-    eframe::run_native(
+    let _ = eframe::run_native(
         "Weather Alerts",         // Application title
         native_options,           // Native options
         Box::new(|_cc| Box::new(app)), // App creator closure
@@ -176,7 +177,7 @@ fn format_weather_data(weather_data: &WeatherResponse) -> (String, String) {
 
     // Ensure pop is within 0.0 to 1.0
     let chance_of_rain_today = (today.pop.min(1.0) * 100.0).round();
-    let daily_weather_description = today.weather[0].description.clone();
+    let daily_weather_description = capitalize_first_letter(&today.weather[0].description);
 
     let today_summary = &today.summary;
 
@@ -186,26 +187,41 @@ fn format_weather_data(weather_data: &WeatherResponse) -> (String, String) {
         0.0
     };
 
+    let temp_min = today.temp.min;
+    let temp_max = today.temp.max;
+
     let formatted_data = format!(
-        "Weather: {}\n\
-        Temperature: {:.1}°F (Feels like {:.1}°F)\n\
-        Humidity: {}%\n\
-        Wind: {:.1} mph {}\n\
-        Chance of Rain Today: {:.0}%\n\
-        Chance of Rain Tomorrow: {:.0}%\n\
-        Summary: {}",
+        r"Summary: {}
+        Current weather: {}
+        Temperature: {:.1}°F (Feels like {:.1}°F)
+        High: {:.1}°F
+        Low: {:.1}°F
+        Humidity: {}%
+        Wind: {:.1} mph {}
+        Chance of Rain Today: {:.0}%
+        Chance of Rain Tomorrow: {:.0}% ",
+        today_summary,
         weather_description,
         temp,
         feels_like,
+        temp_max,
+        temp_min,
         humidity,
         wind_speed,
         wind_direction,
         chance_of_rain_today,
         chance_of_rain_tomorrow,
-        today_summary
     );
 
     (formatted_data, daily_weather_description)
+}
+
+fn capitalize_first_letter(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+    }
 }
 
 fn degrees_to_cardinal(degrees: u16) -> &'static str {
