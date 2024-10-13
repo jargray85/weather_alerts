@@ -1,13 +1,79 @@
 use std::env;
-use dotenv::dotenv;
 use serde::Deserialize;
 use reqwest::Client;
+use eframe::{egui, App, Frame};
+use dotenv::dotenv;
+
+struct WeatherApp {
+    weather_data: Option<String>,
+}
+
+impl App for WeatherApp {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut Frame) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.heading("Today's Weather");
+            if let Some(ref data) = self.weather_data {
+                ui.separator();
+                ui.label(data);
+            } else {
+                ui.spinner();
+                ui.label("Fetching weather data...");
+            }
+        });
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenv().ok();
+
+    // Fetch weather data
+    let weather_data = fetch_weather_data().await?;
+
+    // Create the app instance
+    let app = WeatherApp {
+        weather_data: Some(weather_data),
+    };
+
+    // Run the GUI application
+    let native_options = eframe::NativeOptions::default();
+    eframe::run_native(
+        "Weather Alerts",         // Application title
+        native_options,           // Native options
+        Box::new(|_cc| Box::new(app)), // App creator closure
+    );
+
+    Ok(())
+}
+
+async fn fetch_weather_data() -> Result<String, Box<dyn std::error::Error>> {
+    // Load environment variables
+    let api_key = env::var("OPENWEATHERMAP_API_KEY")?;
+    let city = env::var("CITY").unwrap_or_else(|_| "Valparaiso".to_string());
+    let country_code = env::var("COUNTRY_CODE").unwrap_or_else(|_| "US".to_string());
+
+    let client = Client::new();
+
+    // Get coordinates
+    let (lat, lon) = get_coordinates(&client, &city, &country_code, &api_key).await?;
+
+    // Get weather data
+    let weather_data = get_weather_data(&client, lat, lon, &api_key).await?;
+
+    // Format weather data
+    let weather_string = format_weather_data(&weather_data);
+
+    Ok(weather_string)
+}
+
+// Include your existing structs and functions for get_coordinates, get_weather_data, etc.
 
 #[derive(Debug, Deserialize)]
 struct GeoResponse {
+    name: String,
     lat: f64,
     lon: f64,
-    // Other fields are ignored
+    country: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -15,7 +81,6 @@ struct Weather {
     id: u16,
     main: String,
     description: String,
-    // Other fields are ignored
 }
 
 #[derive(Debug, Deserialize)]
@@ -29,16 +94,7 @@ struct Current {
 }
 
 #[derive(Debug, Deserialize)]
-struct DailyTemp {
-    day: f64,
-    min: f64,
-    max: f64,
-    // Other fields are ignored
-}
-
-#[derive(Debug, Deserialize)]
 struct Daily {
-    temp: DailyTemp,
     pop: f64,
     weather: Vec<Weather>,
 }
@@ -47,31 +103,6 @@ struct Daily {
 struct WeatherResponse {
     current: Current,
     daily: Vec<Daily>,
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    dotenv().ok();
-
-    // Load environment variables
-    let api_key = env::var("OPENWEATHERMAP_API_KEY")?;
-    println!("API Key: {}", api_key);
-    let city = env::var("CITY").unwrap_or_else(|_| "Valparaiso".to_string());
-    let country_code = env::var("COUNTRY_CODE").unwrap_or_else(|_| "US".to_string());
-
-    // Create an HTTP client
-    let client = Client::new();
-
-    // Get coordinates
-    let (lat, lon) = get_coordinates(&client, &city, &country_code, &api_key).await?;
-
-    // Get weather data
-    let weather_data = get_weather_data(&client, lat, lon, &api_key).await?;
-
-    // Display weather data
-    display_weather(&weather_data);
-
-    Ok(())
 }
 
 async fn get_coordinates(
@@ -111,7 +142,7 @@ async fn get_weather_data(
     Ok(weather_data)
 }
 
-fn display_weather(weather_data: &WeatherResponse) {
+fn format_weather_data(weather_data: &WeatherResponse) -> String {
     let current = &weather_data.current;
     let today = &weather_data.daily[0];
     let tomorrow = weather_data.daily.get(1);
@@ -123,7 +154,6 @@ fn display_weather(weather_data: &WeatherResponse) {
     let wind_speed = current.wind_speed;
     let wind_deg = current.wind_deg;
 
-    // Convert wind degrees to compass direction
     let wind_direction = degrees_to_cardinal(wind_deg);
 
     let chance_of_rain_today = today.pop * 100.0;
@@ -135,16 +165,24 @@ fn display_weather(weather_data: &WeatherResponse) {
         0.0
     };
 
-    println!("Weather: {}", weather_description);
-    println!(
-        "Temperature: {:.1}°F (Feels like {:.1}°F)",
-        temp, feels_like
-    );
-    println!("Humidity: {}%", humidity);
-    println!("Wind: {:.1} mph {}", wind_speed, wind_direction);
-    println!("Chance of Rain Today: {:.0}%", chance_of_rain_today);
-    println!("Chance of Rain Tomorrow: {:.0}%", chance_of_rain_tomorrow);
-    println!("Today's Overview: {}", daily_weather_description);
+    format!(
+        "Weather: {}\n\
+        Temperature: {:.1}°F (Feels like {:.1}°F)\n\
+        Humidity: {}%\n\
+        Wind: {:.1} mph {}\n\
+        Chance of Rain Today: {:.0}%\n\
+        Chance of Rain Tomorrow: {:.0}%\n\
+        Today's Overview: {}",
+        weather_description,
+        temp,
+        feels_like,
+        humidity,
+        wind_speed,
+        wind_direction,
+        chance_of_rain_today,
+        chance_of_rain_tomorrow,
+        daily_weather_description
+    )
 }
 
 fn degrees_to_cardinal(degrees: u16) -> &'static str {
@@ -155,3 +193,4 @@ fn degrees_to_cardinal(degrees: u16) -> &'static str {
     let index = (((degrees as f32 + 11.25) / 22.5) as usize) % 16;
     dirs[index]
 }
+
