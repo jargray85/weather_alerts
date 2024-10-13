@@ -156,11 +156,12 @@ fn format_weather_data(weather_data: &WeatherResponse) -> String {
 
     let wind_direction = degrees_to_cardinal(wind_deg);
 
-    let chance_of_rain_today = today.pop * 100.0;
+    // Ensure pop is within 0.0 to 1.0
+    let chance_of_rain_today = (today.pop.min(1.0) * 100.0).round();
     let daily_weather_description = &today.weather[0].description;
 
     let chance_of_rain_tomorrow = if let Some(tomorrow) = tomorrow {
-        tomorrow.pop * 100.0
+        (tomorrow.pop.min(1.0) * 100.0).round()
     } else {
         0.0
     };
