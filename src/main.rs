@@ -100,16 +100,12 @@ async fn get_user_location() -> Result<(String, String), Box<dyn std::error::Err
 
 #[derive(Debug, Deserialize)]
 struct GeoResponse {
-    name: String,
     lat: f64,
     lon: f64,
-    country: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct Weather {
-    id: u16,
-    main: String,
     description: String,
 }
 
@@ -135,7 +131,6 @@ struct Daily {
 
 #[derive(Debug, Deserialize)]
 struct DailyTemp {
-    day: f64,
     min: f64,
     max: f64,
 }
