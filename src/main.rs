@@ -12,22 +12,40 @@ struct WeatherApp {
 }
 
 impl App for WeatherApp {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut Frame) {
-        let _ = frame;
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
+        // Determine background color based on weather data
+        let weather_info = self.weather_data.clone().unwrap_or_default().to_lowercase();
+        let background_color = if weather_info.contains("current weather: clear sky") || weather_info.contains("current weather: partly cloudy sky") {
+            egui::Color32::from_rgb(135, 206, 250)  // Blue for sunny/partly sunny
+        } else if weather_info.contains("current weather: cloudy") || weather_info.contains("current weather: overcast") {
+            egui::Color32::GRAY                     // Gray for cloudy/overcast
+        } else if weather_info.contains("current weather: rain") || weather_info.contains("current weather: snow") {
+            egui::Color32::DARK_GRAY                // Dark Gray for stormy weather
+        } else {
+            egui::Color32::WHITE                    // Default color
+        };
+
+        // Apply background color
+        let _frame = egui::Frame::default().fill(background_color);
         egui::CentralPanel::default().show(ctx, |ui| {
-            let heading_text = if let (Some(ref location), Some(ref desc)) = (&self.location, &self.daily_weather_description) {
-                format!("Today's weather for {} - {}", location, desc)
-            } else {
-                "Today's Weather".to_string()
-            };
-            ui.heading(heading_text);
-            if let Some(ref data) = self.weather_data {
+            ui.vertical_centered(|ui| {
+                let heading_text = if let (Some(ref location), Some(ref desc)) = (&self.location, &self.daily_weather_description) {
+                    format!("Today's weather for {} - {}", location, desc)
+                } else {
+                    "Today's Weather".to_string()
+                };
+
+                ui.label(egui::RichText::new(heading_text).size(32.0).strong().color(egui::Color32::WHITE));
                 ui.separator();
-                ui.label(data);
-            } else {
-                ui.spinner();
-                ui.label("Fetching weather data...");
-            }
+                ui.add_space(20.0); // Increased padding with a margin of 20.0
+
+                if let Some(ref data) = self.weather_data {
+                    ui.label(egui::RichText::new(data).size(16.0).color(egui::Color32::WHITE)); // Consistent font sizing for the weather data
+                } else {
+                    ui.spinner();
+                    ui.label(egui::RichText::new("Fetching weather data...").size(16.0).color(egui::Color32::WHITE));
+                }
+            });
         });
     }
 }
@@ -251,4 +269,3 @@ fn degrees_to_cardinal(degrees: u16) -> &'static str {
     let index = (((degrees as f32 + 11.25) / 22.5) as usize) % 16;
     dirs[index]
 }
-
