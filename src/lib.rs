@@ -11,7 +11,7 @@ pub use main::fetch_weather_data;
 pub use main::determine_weather_type;
 
 // Export the run function that can be called from Tauri
-pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    main::run_app().await
+pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+    main::run_app()
 }
 

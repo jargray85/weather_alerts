@@ -1,4 +1,5 @@
 use std::env;
+use std::sync::{Arc, Mutex};
 use serde::Deserialize;
 use reqwest::Client;
 use eframe::{egui, App, Frame};
@@ -11,6 +12,8 @@ pub struct WeatherApp {
     location: Option<String>,
     animation_time: f64,
     weather_type: WeatherType,
+    weather_fetch_in_progress: Arc<Mutex<bool>>,
+    weather_result: Arc<Mutex<Option<(String, Option<String>, Option<String>, WeatherType)>>>,
 }
 
 #[derive(Clone, Copy)]
@@ -26,6 +29,48 @@ pub enum WeatherType {
 
 impl App for WeatherApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
+        // Check if weather data fetch is in progress and start it if needed
+        {
+            let mut in_progress = self.weather_fetch_in_progress.lock().unwrap();
+            if self.weather_data.is_none() && !*in_progress {
+                *in_progress = true;
+                let result_clone = Arc::clone(&self.weather_result);
+                let in_progress_clone = Arc::clone(&self.weather_fetch_in_progress);
+                
+                // Spawn background thread to fetch weather
+                std::thread::spawn(move || {
+                    let rt = tokio::runtime::Runtime::new().unwrap();
+                    let fetch_result = rt.block_on(fetch_weather_data());
+                    let result = match fetch_result {
+                        Ok((data, desc, city)) => {
+                            let wt = determine_weather_type(&desc);
+                            Some((data, Some(desc), Some(city), wt))
+                        }
+                        Err(e) => {
+                            let error_msg = if e.to_string().contains("environment variable not found") {
+                                "API Key Missing: Please set OPENWEATHERMAP_API_KEY environment variable.\n\nFor packaged apps, you can:\n1. Create a .env file in the app's directory\n2. Or set it as a system environment variable\n3. Or run: export OPENWEATHERMAP_API_KEY='your-key' before launching"
+                            } else {
+                                &format!("Error fetching weather data: {}", e)
+                            };
+                            Some((error_msg.to_string(), None, None, WeatherType::Clear))
+                        }
+                    };
+                    *result_clone.lock().unwrap() = result;
+                    *in_progress_clone.lock().unwrap() = false;
+                });
+            }
+        }
+        
+        // Check if weather data is ready
+        if let Ok(mut result) = self.weather_result.lock() {
+            if let Some((data, desc, city, wt)) = result.take() {
+                self.weather_data = Some(data);
+                self.daily_weather_description = desc;
+                self.location = city;
+                self.weather_type = wt;
+            }
+        }
+        
         // Update animation time
         self.animation_time += ctx.input(|i| i.unstable_dt) as f64;
         
@@ -83,59 +128,221 @@ impl App for WeatherApp {
     }
 }
 
-pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
-    dotenv().ok();
+pub fn run_app() -> Result<(), Box<dyn std::error::Error>> {
+    // Try to load .env file from multiple locations
+    load_env_file();
 
-    // Fetch weather data
-    let (weather_data, daily_weather_description, city) = fetch_weather_data().await?;
-
-    // Determine weather type from description
-    let weather_type = determine_weather_type(&daily_weather_description);
-
-    // Create the app instance
+    // Create the app instance - we'll fetch weather data in the update loop
     let app = WeatherApp {
-        weather_data: Some(weather_data),
-        daily_weather_description: Some(daily_weather_description),
-        location: Some(city),
+        weather_data: None,
+        daily_weather_description: None,
+        location: None,
         animation_time: 0.0,
-        weather_type,
+        weather_type: WeatherType::Clear,
+        weather_fetch_in_progress: Arc::new(Mutex::new(false)),
+        weather_result: Arc::new(Mutex::new(None)),
     };
 
-    // Run the GUI application
+    // Run the GUI application synchronously (not in async context)
+    println!("Starting egui application...");
+    eprintln!("Starting egui application...");
+    
     let native_options = eframe::NativeOptions::default();
-    let _ = eframe::run_native(
-        "Weather Alerts",         // Application title
-        native_options,           // Native options
-        Box::new(|_cc| Box::new(app)), // App creator closure
+    
+    let result = eframe::run_native(
+        "Weather Alerts",
+        native_options,
+        Box::new(|_cc| {
+            println!("Egui window created!");
+            eprintln!("Egui window created!");
+            Box::new(app)
+        }),
     );
+    
+    if let Err(e) = result {
+        let error_msg = format!("Error running egui: {}", e);
+        eprintln!("{}", error_msg);
+    }
 
     Ok(())
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    run_app().await
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    run_app()
+}
+
+fn load_env_file() {
+    const LOG_PATH: &str = "/tmp/weather_alerts.log";
+    let mut log_msg = String::new();
+    
+    // Try to find .env file in multiple locations for packaged apps
+    let mut env_paths = vec![".env".to_string()];
+    
+    // For packaged macOS apps, the executable is in .app/Contents/MacOS/
+    // We want to look in:
+    // 1. .app/Contents/Resources/.env
+    // 2. .app/Contents/MacOS/.env
+    // 3. Parent of .app bundle/.env
+    // 4. Home directory
+    if let Ok(exe_path) = std::env::current_exe() {
+        let exe_path_str = exe_path.to_string_lossy().to_string();
+        log_msg.push_str(&format!("Executable path: {}\n", exe_path_str));
+        
+        // Try Contents/Resources (standard location for app resources)
+        // This is where we bundle the .env file during build
+        if let Some(macos_dir) = exe_path.parent() {
+            if let Some(contents_dir) = macos_dir.parent() {
+                let resources_env = contents_dir.join("Resources").join(".env");
+                if let Some(path_str) = resources_env.to_str() {
+                    env_paths.insert(1, path_str.to_string()); // Prioritize bundled .env
+                }
+            }
+        }
+        
+        // Try Contents/MacOS (where the executable is)
+        if let Some(macos_dir) = exe_path.parent() {
+            let macos_env = macos_dir.join(".env");
+            if let Some(path_str) = macos_env.to_str() {
+                env_paths.push(path_str.to_string());
+            }
+        }
+        
+        // Try parent of .app bundle (if app is in a folder)
+        // Go up from MacOS -> Contents -> .app -> parent
+        if let Some(macos_dir) = exe_path.parent() {
+            if let Some(contents_dir) = macos_dir.parent() {
+                if let Some(app_bundle) = contents_dir.parent() {
+                    if let Some(bundle_parent) = app_bundle.parent() {
+                        let bundle_parent_env = bundle_parent.join(".env");
+                        if let Some(path_str) = bundle_parent_env.to_str() {
+                            env_paths.push(path_str.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Add .env in home directory
+    if let Ok(home) = std::env::var("HOME") {
+        env_paths.push(format!("{}/.weather_alerts.env", home));
+        env_paths.push(format!("{}/.env", home));
+    }
+    
+    // Also check the project directory (for development)
+    // This won't work for packaged apps, but helpful for debugging
+    if let Ok(home) = std::env::var("HOME") {
+        let project_env = format!("{}/Desktop/weather_alerts/.env", home);
+        env_paths.push(project_env);
+    }
+    
+    // Try to load .env from various locations
+    let mut loaded = false;
+    log_msg.push_str("Searching for .env file in these locations:\n");
+    for path in &env_paths {
+        log_msg.push_str(&format!("  Checking: {}\n", path));
+        if std::path::Path::new(path).exists() {
+            log_msg.push_str(&format!("  ✓ Found .env file at: {}\n", path));
+            match dotenv::from_path(path) {
+                Ok(_) => {
+                    log_msg.push_str(&format!("  ✓ Successfully loaded .env from: {}\n", path));
+                    loaded = true;
+                    // Verify the key was loaded
+                    if let Ok(key) = std::env::var("OPENWEATHERMAP_API_KEY") {
+                        log_msg.push_str(&format!("  ✓ API key found (length: {})\n", key.len()));
+                    } else {
+                        log_msg.push_str("  ✗ API key not found in loaded .env file\n");
+                    }
+                    break;
+                }
+                Err(e) => {
+                    log_msg.push_str(&format!("  ✗ Error loading .env from {}: {}\n", path, e));
+                }
+            }
+        } else {
+            log_msg.push_str(&format!("  ✗ Not found: {}\n", path));
+        }
+    }
+    
+    if !loaded {
+        log_msg.push_str(&format!("⚠ No .env file found in any of these locations: {:?}\n", env_paths));
+        // Also try the default dotenv() which looks in current directory
+        dotenv().ok();
+        if let Ok(key) = std::env::var("OPENWEATHERMAP_API_KEY") {
+            log_msg.push_str(&format!("✓ API key found via default dotenv() (length: {})\n", key.len()));
+        } else {
+            log_msg.push_str("✗ API key still not found after default dotenv()\n");
+        }
+    }
+    
+    // Write to log file
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(LOG_PATH)
+        .and_then(|mut file| {
+            use std::io::Write;
+            file.write_all(log_msg.as_bytes())
+        });
+    
+    // Also print to stderr for immediate visibility
+    eprintln!("{}", log_msg);
 }
 
 pub async fn fetch_weather_data() -> Result<(String, String, String), Box<dyn std::error::Error>> {
-    // Load environment variables (no longer needed for city and country)
-    let api_key = env::var("OPENWEATHERMAP_API_KEY")?;
+    // Get proxy server URL (defaults to localhost for development)
+    // For production, set WEATHER_PROXY_URL environment variable or bundle it
+    let proxy_url = env::var("WEATHER_PROXY_URL")
+        .unwrap_or_else(|_| "http://localhost:3000".to_string());
 
     // Get user's location
     let (city, country_code) = get_user_location().await?;
 
     let client = Client::new();
 
-    // Get coordinates
-    let (lat, lon) = get_coordinates(&client, &city, &country_code, &api_key).await?;
+    // Call proxy server instead of OpenWeatherMap directly
+    let request_body = serde_json::json!({
+        "city": city,
+        "country_code": country_code
+    });
 
-    // Get weather data
-    let weather_data = get_weather_data(&client, lat, lon, &api_key).await?;
+    let response = client
+        .post(&format!("{}/api/weather", proxy_url))
+        .json(&request_body)
+        .timeout(std::time::Duration::from_secs(30))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to connect to weather server: {}. Make sure the proxy server is running.", e))?;
 
-    // Format weather data and get daily_weather_description
-    let (weather_string, daily_weather_description) = format_weather_data(&weather_data);
+    if !response.status().is_success() {
+        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        return Err(format!("Weather server error: {}", error_text).into());
+    }
 
-    Ok((weather_string, daily_weather_description, city))
+    #[derive(Deserialize)]
+    struct ProxyResponse {
+        weather_data: serde_json::Value,
+        daily_weather_description: String,
+        city: String,
+    }
+
+    let proxy_response: ProxyResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse weather server response: {}", e))?;
+
+    // Convert the JSON weather_data back to WeatherResponse format for formatting
+    let weather_response: WeatherResponse = serde_json::from_value(proxy_response.weather_data)
+        .map_err(|e| format!("Failed to parse weather data: {}", e))?;
+
+    // Format weather data
+    let (weather_string, _) = format_weather_data(&weather_response);
+
+    Ok((
+        weather_string,
+        proxy_response.daily_weather_description,
+        proxy_response.city,
+    ))
 }
 
 async fn get_user_location() -> Result<(String, String), Box<dyn std::error::Error>> {
@@ -201,6 +408,9 @@ struct WeatherResponse {
     daily: Vec<Daily>,
 }
 
+// These functions are no longer needed - we use the proxy server instead
+// Keeping them commented out in case we need to revert
+/*
 async fn get_coordinates(
     client: &Client,
     city: &str,
@@ -239,6 +449,7 @@ async fn get_weather_data(
     let weather_data: WeatherResponse = serde_json::from_str(&text)?;
     Ok(weather_data)
 }
+*/
 
 fn format_weather_data(weather_data: &WeatherResponse) -> (String, String) {
     let current = &weather_data.current;

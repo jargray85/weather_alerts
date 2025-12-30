@@ -11,7 +11,16 @@
   },
 
   "app": {
-    "windows": [],
+    "windows": [
+      {
+        "label": "main",
+        "visible": false,
+        "width": 1,
+        "height": 1,
+        "resizable": false,
+        "decorations": false
+      }
+    ],
     "security": {
       "csp": null
     }
