@@ -5,7 +5,7 @@ use eframe::{egui, App, Frame};
 use dotenv::dotenv;
 use serde_json;
 
-struct WeatherApp {
+pub struct WeatherApp {
     weather_data: Option<String>,
     daily_weather_description: Option<String>,
     location: Option<String>,
@@ -14,7 +14,7 @@ struct WeatherApp {
 }
 
 #[derive(Clone, Copy)]
-enum WeatherType {
+pub enum WeatherType {
     Clear,
     PartlyCloudy,
     Cloudy,
@@ -83,8 +83,7 @@ impl App for WeatherApp {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
 
     // Fetch weather data
@@ -113,7 +112,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn fetch_weather_data() -> Result<(String, String, String), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    run_app().await
+}
+
+pub async fn fetch_weather_data() -> Result<(String, String, String), Box<dyn std::error::Error>> {
     // Load environment variables (no longer needed for city and country)
     let api_key = env::var("OPENWEATHERMAP_API_KEY")?;
 
@@ -325,7 +329,7 @@ fn degrees_to_cardinal(degrees: u16) -> &'static str {
     dirs[index]
 }
 
-fn determine_weather_type(description: &str) -> WeatherType {
+pub fn determine_weather_type(description: &str) -> WeatherType {
     let desc_lower = description.to_lowercase();
     if desc_lower.contains("snow") {
         WeatherType::Snow
