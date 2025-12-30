@@ -224,8 +224,23 @@ fn format_weather_data(weather_data: &WeatherResponse) -> (String, String) {
         0.0
     };
 
+    // Check if today's weather is snow
+    let today_weather_desc = today.weather[0].description.to_lowercase();
+    let is_snow_today = today_weather_desc.contains("snow");
+
+    // Check if tomorrow's weather is snow
+    let is_snow_tomorrow = if let Some(tomorrow) = tomorrow {
+        tomorrow.weather[0].description.to_lowercase().contains("snow")
+    } else {
+        false
+    };
+
     let temp_min = today.temp.min;
     let temp_max = today.temp.max;
+
+    // Determine the precipitation type labels
+    let today_precip_label = if is_snow_today { "Snow" } else { "Rain" };
+    let tomorrow_precip_label = if is_snow_tomorrow { "Snow" } else { "Rain" };
 
     let formatted_data = format!(
         r"Summary: {}
@@ -235,8 +250,8 @@ fn format_weather_data(weather_data: &WeatherResponse) -> (String, String) {
         Low: {:.1}°F
         Humidity: {}%
         Wind: {:.1} mph {}
-        Chance of Rain Today: {:.0}%
-        Chance of Rain Tomorrow: {:.0}% ",
+        Chance of {} Today: {:.0}%
+        Chance of {} Tomorrow: {:.0}% ",
         today_summary,
         weather_description,
         temp,
@@ -246,7 +261,9 @@ fn format_weather_data(weather_data: &WeatherResponse) -> (String, String) {
         humidity,
         wind_speed,
         wind_direction,
+        today_precip_label,
         chance_of_rain_today,
+        tomorrow_precip_label,
         chance_of_rain_tomorrow,
     );
 
