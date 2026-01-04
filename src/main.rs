@@ -593,13 +593,18 @@ impl WeatherApp {
                 }
             }
             WeatherType::Cloudy => {
-                // Animated clouds
-                for i in 0..4 {
-                    let offset_x = (i as f32 - 1.5) * radius * 0.5 + (time * 15.0 + i as f64).sin() as f32 * 15.0;
-                    let offset_y = (time * 12.0 + i as f64 * 0.5).cos() as f32 * 10.0;
-                    let cloud_pos = center + egui::Vec2::new(offset_x, offset_y);
-                    self.draw_cloud(painter, cloud_pos, radius * 0.35);
-                }
+                // Layered static clouds (no motion)
+                // Back layer - larger, darker clouds
+                self.draw_cloud(painter, center + egui::Vec2::new(-radius * 0.3, -radius * 0.2), radius * 0.4);
+                self.draw_cloud(painter, center + egui::Vec2::new(radius * 0.3, -radius * 0.15), radius * 0.38);
+                
+                // Middle layer
+                self.draw_cloud(painter, center + egui::Vec2::new(-radius * 0.15, radius * 0.1), radius * 0.35);
+                self.draw_cloud(painter, center + egui::Vec2::new(radius * 0.2, radius * 0.05), radius * 0.32);
+                
+                // Front layer - smaller, lighter clouds
+                self.draw_cloud(painter, center + egui::Vec2::new(0.0, radius * 0.25), radius * 0.3);
+                self.draw_cloud(painter, center + egui::Vec2::new(-radius * 0.25, radius * 0.3), radius * 0.28);
             }
             WeatherType::Rain => {
                 // Animated rain drops
@@ -707,11 +712,16 @@ impl WeatherApp {
     }
     
     fn draw_cloud(&self, painter: &egui::Painter, center: egui::Pos2, size: f32) {
-        let color = egui::Color32::from_rgb(200, 200, 200);
-        // Draw cloud as overlapping circles
-        painter.circle_filled(center, size, color);
-        painter.circle_filled(center + egui::Vec2::new(-size * 0.6, 0.0), size * 0.8, color);
-        painter.circle_filled(center + egui::Vec2::new(size * 0.6, 0.0), size * 0.8, color);
-        painter.circle_filled(center + egui::Vec2::new(0.0, size * 0.4), size * 0.7, color);
+        // Use slightly different shades for depth
+        let base_color = egui::Color32::from_rgb(200, 200, 200);
+        let darker_color = egui::Color32::from_rgb(180, 180, 180);
+        
+        // Draw cloud as overlapping circles for a fluffy appearance
+        painter.circle_filled(center, size, base_color);
+        painter.circle_filled(center + egui::Vec2::new(-size * 0.6, 0.0), size * 0.8, base_color);
+        painter.circle_filled(center + egui::Vec2::new(size * 0.6, 0.0), size * 0.8, base_color);
+        painter.circle_filled(center + egui::Vec2::new(0.0, size * 0.4), size * 0.7, darker_color);
+        painter.circle_filled(center + egui::Vec2::new(-size * 0.4, size * 0.3), size * 0.6, base_color);
+        painter.circle_filled(center + egui::Vec2::new(size * 0.4, size * 0.3), size * 0.6, base_color);
     }
 }
