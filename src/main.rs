@@ -597,14 +597,6 @@ impl WeatherApp {
                 // Back layer - larger, darker clouds
                 self.draw_cloud(painter, center + egui::Vec2::new(-radius * 0.3, -radius * 0.2), radius * 0.4);
                 self.draw_cloud(painter, center + egui::Vec2::new(radius * 0.3, -radius * 0.15), radius * 0.38);
-                
-                // Middle layer
-                self.draw_cloud(painter, center + egui::Vec2::new(-radius * 0.15, radius * 0.1), radius * 0.35);
-                self.draw_cloud(painter, center + egui::Vec2::new(radius * 0.2, radius * 0.05), radius * 0.32);
-                
-                // Front layer - smaller, lighter clouds
-                self.draw_cloud(painter, center + egui::Vec2::new(0.0, radius * 0.25), radius * 0.3);
-                self.draw_cloud(painter, center + egui::Vec2::new(-radius * 0.25, radius * 0.3), radius * 0.28);
             }
             WeatherType::Rain => {
                 // Animated rain drops
