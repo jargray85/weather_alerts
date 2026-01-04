@@ -365,12 +365,15 @@ async fn get_user_location() -> Result<(String, String), Box<dyn std::error::Err
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct GeoResponse {
-    lat: f64,
-    lon: f64,
-}
+// GeoResponse is no longer needed - we use the proxy server now
+// It's only referenced in the commented-out get_coordinates function
+// #[derive(Debug, Deserialize)]
+// struct GeoResponse {
+//     lat: f64,
+//     lon: f64,
+// }
 
+// These structs are still used for parsing weather data from the proxy server
 #[derive(Debug, Deserialize)]
 struct Weather {
     description: String,
